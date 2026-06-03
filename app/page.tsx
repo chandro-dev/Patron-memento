@@ -4,18 +4,19 @@ import {
   ArrowLeft,
   ArrowRight,
   Braces,
+  Boxes,
   CheckCircle2,
   Clock3,
   Code2,
   DatabaseZap,
+  FileSignature,
   FileText,
   History,
-  RotateCcw,
   Save,
   Sparkles,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type EditorState = {
   title: string;
@@ -29,6 +30,8 @@ type Snapshot = EditorState & {
   label: string;
   createdAt: string;
 };
+
+type VisualEffect = "idle" | "save" | "undo" | "redo" | "restore";
 
 class EditorMemento {
   constructor(private readonly state: Snapshot) {}
@@ -75,6 +78,13 @@ const initialState: EditorState = {
     "El Originator guarda una copia privada de su estado. El Caretaker conserva esas copias sin conocer sus detalles internos.",
   tone: "Tecnico",
   accent: "#13b981",
+};
+
+const initialSnapshot: Snapshot = {
+  ...initialState,
+  id: 1,
+  label: "Estado inicial",
+  createdAt: "Inicio",
 };
 
 const presetStates: EditorState[] = [
@@ -135,17 +145,41 @@ class ArticleOriginator {
 
 export default function Home() {
   const [editorState, setEditorState] = useState<EditorState>(initialState);
-  const [past, setPast] = useState<EditorMemento[]>([]);
+  const [past, setPast] = useState<EditorMemento[]>([
+    new EditorMemento(initialSnapshot),
+  ]);
   const [future, setFuture] = useState<EditorMemento[]>([]);
-  const [activeSnapshot, setActiveSnapshot] = useState<Snapshot | null>(null);
+  const [activeSnapshot, setActiveSnapshot] = useState<Snapshot | null>(
+    initialSnapshot,
+  );
   const [restorePulse, setRestorePulse] = useState(0);
+  const [visualEffect, setVisualEffect] = useState<VisualEffect>("idle");
+  const [effectPulse, setEffectPulse] = useState(0);
+  const [lastAction, setLastAction] = useState(
+    "Estado inicial cargado en el Originator.",
+  );
 
   const originator = useMemo(() => new ArticleOriginator(editorState), [editorState]);
   const snapshots = past.map((memento) => memento.getState());
+  const latestSnapshot = snapshots.at(-1);
+  const hasUnsavedChanges = latestSnapshot
+    ? !statesMatch(editorState, latestSnapshot)
+    : false;
+  const canUndo = past.length > 1 || hasUnsavedChanges;
+  const canRedo = future.length > 0;
+  const contentLength = editorState.content.trim().length;
+
+  const announceAction = useCallback((message: string, effect: VisualEffect) => {
+    setLastAction(message);
+    setVisualEffect(effect);
+    setEffectPulse((value) => value + 1);
+  }, []);
 
   function updateState(nextState: EditorState) {
     setEditorState(nextState);
     setActiveSnapshot(null);
+    setLastAction("El Originator cambio su estado interno. Todavia no hay un nuevo Memento.");
+    setVisualEffect("idle");
   }
 
   function saveSnapshot(label = `Estado ${past.length + 1}`) {
@@ -154,37 +188,82 @@ export default function Home() {
     setPast((current) => [...current, memento]);
     setFuture([]);
     setActiveSnapshot(memento.getState());
+    announceAction("save(): el Originator creo un Memento y el Caretaker lo guardo.", "save");
   }
 
-  function restoreFrom(memento: EditorMemento) {
+  const restoreFrom = useCallback((memento: EditorMemento) => {
     const restored = originator.restore(memento);
     setEditorState(restored);
     setActiveSnapshot(memento.getState());
     setRestorePulse((value) => value + 1);
-  }
+  }, [originator]);
 
-  function undo() {
-    if (!past.length) return;
-    const current = originator.save("Estado actual");
-    const previous = past[past.length - 1];
+  const undo = useCallback(() => {
+    const lastSaved = past.at(-1);
+    if (!lastSaved) return;
+
+    if (!statesMatch(editorState, lastSaved.getState())) {
+      const current = originator.save("Cambio sin guardar");
+      restoreFrom(lastSaved);
+      setFuture((items) => [current, ...items]);
+      announceAction("Ctrl+Z: se descarto el cambio sin guardar y se volvio al ultimo Memento.", "undo");
+      return;
+    }
+
+    if (past.length < 2) return;
+
+    const current = past[past.length - 1];
+    const previous = past[past.length - 2];
     restoreFrom(previous);
     setPast((items) => items.slice(0, -1));
     setFuture((items) => [current, ...items]);
-  }
+    announceAction("Ctrl+Z: el Caretaker entrego el Memento anterior al Originator.", "undo");
+  }, [announceAction, editorState, originator, past, restoreFrom]);
 
-  function redo() {
+  const redo = useCallback(() => {
     if (!future.length) return;
     const next = future[0];
-    const current = originator.save("Estado actual");
     restoreFrom(next);
     setFuture((items) => items.slice(1));
-    setPast((items) => [...items, current]);
-  }
+    setPast((items) => [...items, next]);
+    announceAction("Ctrl+Y: el Caretaker recupero un Memento desde la pila de redo.", "redo");
+  }, [announceAction, future, restoreFrom]);
+
+  useEffect(() => {
+    function handleKeyboard(event: KeyboardEvent) {
+      const key = event.key.toLowerCase();
+      const isUndo = (event.ctrlKey || event.metaKey) && key === "z" && !event.shiftKey;
+      const isRedo =
+        (event.ctrlKey || event.metaKey) &&
+        (key === "y" || (key === "z" && event.shiftKey));
+
+      if (!isUndo && !isRedo) return;
+
+      event.preventDefault();
+      if (isUndo) undo();
+      if (isRedo) redo();
+    }
+
+    window.addEventListener("keydown", handleKeyboard);
+    return () => window.removeEventListener("keydown", handleKeyboard);
+  }, [redo, undo]);
 
   function clearHistory() {
-    setPast([]);
+    const resetMemento = new EditorMemento(initialSnapshot);
+    setPast([resetMemento]);
     setFuture([]);
-    setActiveSnapshot(null);
+    restoreFrom(resetMemento);
+    announceAction("Historial reiniciado: solo queda el Memento inicial.", "restore");
+  }
+
+  function restoreSnapshotAt(index: number) {
+    const selected = past[index];
+    if (!selected) return;
+
+    restoreFrom(selected);
+    setPast((items) => items.slice(0, index + 1));
+    setFuture((items) => [...past.slice(index + 1), ...items]);
+    announceAction("Restauracion directa: el Caretaker envio ese Memento al Originator.", "restore");
   }
 
   return (
@@ -216,10 +295,10 @@ export default function Home() {
               <h2>Editor que cambia de estado</h2>
             </div>
             <div className="toolbar">
-              <button className="icon-button" onClick={undo} disabled={!past.length} title="Undo">
+              <button className="icon-button" onClick={undo} disabled={!canUndo} title="Deshacer con Ctrl+Z">
                 <ArrowLeft size={18} aria-hidden="true" />
               </button>
-              <button className="icon-button" onClick={redo} disabled={!future.length} title="Redo">
+              <button className="icon-button" onClick={redo} disabled={!canRedo} title="Rehacer con Ctrl+Y">
                 <ArrowRight size={18} aria-hidden="true" />
               </button>
               <button className="primary-button" onClick={() => saveSnapshot()}>
@@ -229,10 +308,53 @@ export default function Home() {
             </div>
           </div>
 
+          <div className="shortcut-strip" aria-label="Atajos de teclado">
+            <span>
+              <kbd>Ctrl</kbd>
+              <kbd>Z</kbd>
+              Deshacer estado
+            </span>
+            <span>
+              <kbd>Ctrl</kbd>
+              <kbd>Y</kbd>
+              Rehacer estado
+            </span>
+            <strong>{hasUnsavedChanges ? "Cambio pendiente" : "Estado guardado"}</strong>
+          </div>
+
+          <div className="inside-flow" aria-label="Estado interno del patron Memento">
+            <FlowStep
+              icon={<FileText size={28} />}
+              title="Originator"
+              value={hasUnsavedChanges ? "Cambio sin guardar" : "Sin cambios pendientes"}
+              text="El editor posee el estado actual y decide cuando crear o restaurar un snapshot."
+            />
+            <FlowStep
+              icon={<Boxes size={28} />}
+              title="Memento"
+              value={activeSnapshot?.label ?? "Editando en vivo"}
+              text="Cada copia conserva titulo, contenido, enfoque y color sin exponer detalles al historial."
+            />
+            <FlowStep
+              icon={<History size={28} />}
+              title="Caretaker"
+              value={`${past.length} guardados / ${future.length} rehacer`}
+              text="Administra las pilas de undo y redo sin modificar el estado encapsulado."
+            />
+          </div>
+
+          <div className={`action-banner effect-${visualEffect}`} key={`action-${effectPulse}`}>
+            <Clock3 size={22} aria-hidden="true" />
+            <div>
+              <span>Operacion actual</span>
+              <strong>{lastAction}</strong>
+            </div>
+          </div>
+
           <div
-            className="state-preview"
+            className={`state-preview effect-${visualEffect}`}
             style={{ "--accent": editorState.accent } as React.CSSProperties}
-            key={`${editorState.title}-${restorePulse}`}
+            key={`${editorState.title}-${restorePulse}-${effectPulse}`}
           >
             <div className="preview-top">
               <span>{editorState.tone}</span>
@@ -243,45 +365,78 @@ export default function Home() {
             <div className="state-note">{toneNotes[editorState.tone]}</div>
           </div>
 
-          <div className="form-grid">
-            <label>
-              Titulo
-              <input
-                value={editorState.title}
-                onChange={(event) =>
-                  updateState({ ...editorState, title: event.target.value })
-                }
-              />
-            </label>
-            <label>
-              Enfoque
-              <select
-                value={editorState.tone}
-                onChange={(event) =>
-                  updateState({
-                    ...editorState,
-                    tone: event.target.value as EditorState["tone"],
-                  })
-                }
-              >
-                <option>Tecnico</option>
-                <option>Visual</option>
-                <option>Practico</option>
-              </select>
-            </label>
-            <label className="wide">
-              Contenido
-              <textarea
-                value={editorState.content}
-                onChange={(event) =>
-                  updateState({ ...editorState, content: event.target.value })
-                }
-                rows={5}
-              />
-            </label>
+          <div className="capture-card">
+            <div className="capture-head">
+              <div>
+                <span className="section-kicker">Estado editable</span>
+                <h3>Datos que se guardan dentro del Memento</h3>
+              </div>
+              <div className="capture-badge">
+                <FileSignature size={18} aria-hidden="true" />
+                {hasUnsavedChanges ? "Listo para guardar" : "Sin cambios"}
+              </div>
+            </div>
+
+            <div className="capture-fields">
+              <label className="field-card title-field">
+                <span>Titulo del estado</span>
+                <input
+                  value={editorState.title}
+                  onChange={(event) =>
+                    updateState({ ...editorState, title: event.target.value })
+                  }
+                  placeholder="Nombre del snapshot"
+                />
+              </label>
+
+              <fieldset className="tone-picker">
+                <legend>Enfoque</legend>
+                <div>
+                  {presetStates.map((preset) => (
+                    <button
+                      key={preset.tone}
+                      type="button"
+                      className={editorState.tone === preset.tone ? "selected" : ""}
+                      onClick={() =>
+                        updateState({
+                          ...editorState,
+                          tone: preset.tone,
+                          accent: preset.accent,
+                        })
+                      }
+                      style={{ "--accent": preset.accent } as React.CSSProperties}
+                    >
+                      <span />
+                      {preset.tone}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+
+              <label className="field-card content-field">
+                <span>Contenido capturado</span>
+                <textarea
+                  value={editorState.content}
+                  onChange={(event) =>
+                    updateState({ ...editorState, content: event.target.value })
+                  }
+                  rows={6}
+                  placeholder="Describe el estado que quieres capturar..."
+                />
+              </label>
+            </div>
+
+            <div className="capture-summary">
+              <span>
+                <strong>{editorState.title || "Sin titulo"}</strong> se guardara como{" "}
+                <strong>{editorState.tone}</strong>.
+              </span>
+              <span>{contentLength} caracteres</span>
+            </div>
           </div>
 
-          <div className="preset-row">
+          <div className="preset-row" aria-label="Ejemplos rapidos de estados">
+            <span>Ejemplos rapidos</span>
             {presetStates.map((preset) => (
               <button
                 key={preset.title}
@@ -289,7 +444,7 @@ export default function Home() {
                 onClick={() => updateState(preset)}
                 style={{ "--accent": preset.accent } as React.CSSProperties}
               >
-                <span />
+                <i aria-hidden="true" />
                 {preset.tone}
               </button>
             ))}
@@ -302,7 +457,7 @@ export default function Home() {
               <span className="section-kicker">Caretaker</span>
               <h2>Historial de Mementos</h2>
             </div>
-            <button className="icon-button" onClick={clearHistory} disabled={!past.length && !future.length} title="Limpiar">
+            <button className="icon-button" onClick={clearHistory} disabled={past.length === 1 && !future.length} title="Limpiar">
               <Trash2 size={18} aria-hidden="true" />
             </button>
           </div>
@@ -320,7 +475,7 @@ export default function Home() {
                   className={`timeline-item ${
                     activeSnapshot?.id === snapshot.id ? "active" : ""
                   }`}
-                  onClick={() => restoreFrom(past[index])}
+                  onClick={() => restoreSnapshotAt(index)}
                 >
                   <span className="timeline-dot" />
                   <strong>{snapshot.label}</strong>
@@ -377,6 +532,38 @@ export default function Home() {
         </article>
       </section>
     </main>
+  );
+}
+
+function statesMatch(current: EditorState, snapshot: Snapshot) {
+  return (
+    current.title === snapshot.title &&
+    current.content === snapshot.content &&
+    current.tone === snapshot.tone &&
+    current.accent === snapshot.accent
+  );
+}
+
+function FlowStep({
+  icon,
+  title,
+  value,
+  text,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  value: string;
+  text: string;
+}) {
+  return (
+    <article className="flow-step">
+      <div className="flow-icon">{icon}</div>
+      <div>
+        <span>{title}</span>
+        <strong>{value}</strong>
+        <p>{text}</p>
+      </div>
+    </article>
   );
 }
 
