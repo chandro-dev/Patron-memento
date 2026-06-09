@@ -136,6 +136,36 @@ h1 {
   font-size: 1.95rem;
 }
 
+.status-band {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  padding: 0 clamp(20px, 5vw, 72px);
+  background: #d7deea;
+}
+
+.status-band div {
+  display: grid;
+  gap: 4px;
+  min-height: 88px;
+  padding: 16px 18px;
+  background: #ffffff;
+}
+
+.status-band span {
+  color: #667085;
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.status-band strong {
+  color: #172033;
+  font-size: clamp(1rem, 1.8vw, 1.34rem);
+  line-height: 1.2;
+}
+
 .workspace,
 .learning-grid {
   display: grid;
@@ -408,6 +438,21 @@ kbd {
   font-weight: 800;
 }
 
+.preview-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.preview-badges span {
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, white);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.76);
+  color: #344054;
+  font-size: 0.86rem;
+}
+
 .state-preview h3 {
   max-width: 720px;
   margin-bottom: 14px;
@@ -640,6 +685,37 @@ textarea:focus {
 .history-panel {
   position: sticky;
   top: 18px;
+}
+
+.stack-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.stack-summary div {
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  padding: 12px;
+  background: linear-gradient(180deg, #ffffff, #f8fbff);
+}
+
+.stack-summary span {
+  display: block;
+  color: #667085;
+  font-size: 0.74rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.stack-summary strong {
+  display: block;
+  margin-top: 4px;
+  color: #172033;
+  font-size: 2rem;
+  line-height: 1;
 }
 
 .timeline {
@@ -918,7 +994,8 @@ code {
   .hero-band,
   .workspace,
   .learning-grid,
-  .inside-flow {
+  .inside-flow,
+  .status-band {
     grid-template-columns: 1fr;
   }
 

@@ -51,7 +51,7 @@ class ArticleOriginator {
   update(nextState: EditorState) {
     this.state = nextState;
   }
-
+  //Guardado de un estado dentro del memento
   save(label: string): EditorMemento {
     return new EditorMemento({
       ...this.state,
@@ -64,7 +64,7 @@ class ArticleOriginator {
       }).format(new Date()),
     });
   }
-
+  //Restaurar un estado anterior
   restore(memento: EditorMemento): EditorState {
     const { id, label, createdAt, ...restoredState } = memento.getState();
     this.state = restoredState;
@@ -287,6 +287,25 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="status-band" aria-label="Lectura rapida del estado actual">
+        <div>
+          <span>Estado actual</span>
+          <strong>{activeSnapshot?.label ?? "Editando sin guardar"}</strong>
+        </div>
+        <div>
+          <span>Undo disponible</span>
+          <strong>{canUndo ? "Si" : "No"}</strong>
+        </div>
+        <div>
+          <span>Redo disponible</span>
+          <strong>{canRedo ? "Si" : "No"}</strong>
+        </div>
+        <div>
+          <span>Encapsulamiento</span>
+          <strong>Memento privado</strong>
+        </div>
+      </section>
+
       <section className="workspace">
         <div className="editor-panel">
           <div className="panel-title">
@@ -358,7 +377,10 @@ export default function Home() {
           >
             <div className="preview-top">
               <span>{editorState.tone}</span>
-              <Clock3 size={18} aria-hidden="true" />
+              <div className="preview-badges">
+                <span>{activeSnapshot?.createdAt ?? "En vivo"}</span>
+                <Clock3 size={18} aria-hidden="true" />
+              </div>
             </div>
             <h3>{editorState.title}</h3>
             <p>{editorState.content}</p>
@@ -460,6 +482,17 @@ export default function Home() {
             <button className="icon-button" onClick={clearHistory} disabled={past.length === 1 && !future.length} title="Limpiar">
               <Trash2 size={18} aria-hidden="true" />
             </button>
+          </div>
+
+          <div className="stack-summary">
+            <div>
+              <span>Undo stack</span>
+              <strong>{past.length}</strong>
+            </div>
+            <div>
+              <span>Redo stack</span>
+              <strong>{future.length}</strong>
+            </div>
           </div>
 
           <div className="timeline">

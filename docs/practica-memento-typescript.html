@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Practica TypeScript - Patron Memento</title>
+    <style>
+      @page {
+        margin: 18mm;
+      }
+
+      body {
+        color: #172033;
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        color: #0f766e;
+        font-size: 26px;
+      }
+
+      h2 {
+        margin: 22px 0 8px;
+        color: #1d4ed8;
+        font-size: 18px;
+      }
+
+      h3 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+
+      p {
+        margin: 0 0 10px;
+      }
+
+      .intro,
+      .step,
+      .note,
+      .challenge {
+        border: 1px solid #d7deea;
+        border-radius: 8px;
+        padding: 12px;
+        background: #ffffff;
+      }
+
+      .intro {
+        border-left: 8px solid #13b981;
+        background: #f8fbff;
+      }
+
+      .step {
+        margin: 10px 0;
+      }
+
+      .step h3 {
+        color: #172033;
+      }
+
+      .note {
+        border-left: 5px solid #2563eb;
+        background: #eff6ff;
+      }
+
+      .challenge {
+        border-left: 5px solid #f97316;
+        background: #fff7ed;
+      }
+
+      code,
+      pre {
+        font-family: Consolas, "Liberation Mono", monospace;
+      }
+
+      pre {
+        overflow: hidden;
+        border: 1px solid #d7deea;
+        border-radius: 8px;
+        padding: 12px;
+        background: #0d1117;
+        color: #dbeafe;
+        font-size: 11px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+      }
+
+      ul,
+      ol {
+        padding-left: 22px;
+      }
+
+      .page-break {
+        page-break-before: always;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Practica: Patron Memento con TypeScript</h1>
+
+    <section class="intro">
+      <p>
+        En esta practica vamos a construir un editor simple que puede guardar estados,
+        deshacer cambios y rehacerlos usando el patron Memento.
+      </p>
+      <p>
+        La idea central es separar tres responsabilidades: quien cambia el estado,
+        quien guarda una copia y quien administra el historial.
+      </p>
+    </section>
+
+    <h2>Paso 1: definir el estado</h2>
+    <div class="step">
+      <h3>Crea el tipo que representa la nota editable</h3>
+      <pre><code>type NoteState = {
+  title: string;
+  body: string;
+  tag: "idea" | "task" | "archive";
+};
+
+type NoteSnapshot = NoteState & {
+  id: number;
+  label: string;
+};</code></pre>
+      <p>
+        `NoteState` es el estado real. `NoteSnapshot` agrega datos para identificar
+        cada guardado dentro del historial.
+      </p>
+    </div>
+
+    <h2>Paso 2: crear el Memento</h2>
+    <div class="step">
+      <h3>El Memento conserva una copia del estado</h3>
+      <pre><code>class NoteMemento {
+  constructor(private readonly snapshot: NoteSnapshot) {}
+
+  getState(): NoteSnapshot {
+    return structuredClone(this.snapshot);
+  }
+}</code></pre>
+      <p>
+        La copia se devuelve con `structuredClone` para evitar que otra parte del
+        programa modifique directamente el snapshot guardado.
+      </p>
+    </div>
+
+    <h2>Paso 3: crear el Originator</h2>
+    <div class="step">
+      <h3>El Originator modifica, guarda y restaura su propio estado</h3>
+      <pre><code>class NoteOriginator {
+  private state: NoteState;
+
+  constructor(initialState: NoteState) {
+    this.state = initialState;
+  }
+
+  update(nextState: NoteState) {
+    this.state = nextState;
+  }
+
+  save(label: string): NoteMemento {
+    return new NoteMemento({
+      ...this.state,
+      id: Date.now(),
+      label,
+    });
+  }
+
+  restore(memento: NoteMemento): NoteState {
+    const { id, label, ...state } = memento.getState();
+    this.state = state;
+    return this.state;
+  }
+}</code></pre>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h2>Paso 4: crear el Caretaker</h2>
+    <div class="step">
+      <h3>El Caretaker administra las pilas de undo y redo</h3>
+      <pre><code>class HistoryCaretaker {
+  private past: NoteMemento[] = [];
+  private future: NoteMemento[] = [];
+
+  push(memento: NoteMemento) {
+    this.past.push(memento);
+    this.future = [];
+  }
+
+  undo(current: NoteMemento): NoteMemento | null {
+    const previous = this.past.pop();
+    if (!previous) return null;
+
+    this.future.unshift(current);
+    return previous;
+  }
+
+  redo(): NoteMemento | null {
+    const next = this.future.shift();
+    if (!next) return null;
+
+    this.past.push(next);
+    return next;
+  }
+}</code></pre>
+      <p>
+        El Caretaker no cambia el contenido del Memento. Solo mueve snapshots entre
+        la pila de deshacer y la pila de rehacer.
+      </p>
+    </div>
+
+    <h2>Paso 5: probar el flujo</h2>
+    <div class="step">
+      <h3>Simula cambios desde consola</h3>
+      <pre><code>const originator = new NoteOriginator({
+  title: "Nota inicial",
+  body: "Primer contenido",
+  tag: "idea",
+});
+
+const caretaker = new HistoryCaretaker();
+
+caretaker.push(originator.save("Estado inicial"));
+
+originator.update({
+  title: "Nota editada",
+  body: "Contenido modificado",
+  tag: "task",
+});
+
+caretaker.push(originator.save("Estado editado"));
+
+const current = originator.save("Estado actual");
+const previous = caretaker.undo(current);
+
+if (previous) {
+  const restored = originator.restore(previous);
+  console.log("Restaurado:", restored);
+}</code></pre>
+    </div>
+
+    <h2>Paso 6: preguntas de cierre</h2>
+    <ul>
+      <li>Que clase actua como Originator?</li>
+      <li>Que clase actua como Memento?</li>
+      <li>Por que el Caretaker no deberia modificar directamente el estado guardado?</li>
+      <li>Que pasa con la pila de redo cuando se guarda un nuevo estado?</li>
+    </ul>
+
+    <h2>Reto</h2>
+    <section class="challenge">
+      <h3>Restaurar un punto especifico del historial</h3>
+      <p>
+        Agrega un metodo <code>restoreAt(index)</code> dentro de
+        <code>HistoryCaretaker</code>. Este metodo debe recibir la posicion de un
+        snapshot guardado, devolver ese Memento y mover todos los estados que estaban
+        despues de esa posicion a la pila de redo.
+      </p>
+      <p>Reglas:</p>
+      <ul>
+        <li>Si el indice no existe, debe devolver <code>null</code>.</li>
+        <li>El estado seleccionado debe quedar como el ultimo elemento de <code>past</code>.</li>
+        <li>Los estados posteriores deben pasar a <code>future</code>.</li>
+      </ul>
+    </section>
+
+    <h2>Solucion del reto</h2>
+    <div class="step">
+      <h3>Metodo restoreAt(index)</h3>
+      <pre><code>class HistoryCaretaker {
+  private past: NoteMemento[] = [];
+  private future: NoteMemento[] = [];
+
+  push(memento: NoteMemento) {
+    this.past.push(memento);
+    this.future = [];
+  }
+
+  undo(current: NoteMemento): NoteMemento | null {
+    const previous = this.past.pop();
+    if (!previous) return null;
+
+    this.future.unshift(current);
+    return previous;
+  }
+
+  redo(): NoteMemento | null {
+    const next = this.future.shift();
+    if (!next) return null;
+
+    this.past.push(next);
+    return next;
+  }
+
+  restoreAt(index: number): NoteMemento | null {
+    const selected = this.past[index];
+    if (!selected) return null;
+
+    const removed = this.past.splice(index + 1);
+    this.future = [...removed, ...this.future];
+
+    return selected;
+  }
+}</code></pre>
+      <p>
+        Con esta solucion, el Caretaker sigue sin modificar el contenido de los
+        Mementos. Solo reorganiza las pilas para que el historial pueda volver a un
+        punto especifico.
+      </p>
+    </div>
+  </body>
+</html>
